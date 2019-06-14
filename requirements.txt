@@ -1,0 +1,5 @@
+requests==2.21.0
+python-dotenv==0.10.2
+aiofile==1.5.2
+async-timeout==3.0.1
+aionursery==0.3.0
