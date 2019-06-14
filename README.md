@@ -1,6 +1,6 @@
 # Anonymous Сhat Сlient
 
-This is [Tkinter GUI](https://docs.python.org/3/library/tkinter.html) based program for chating uses asyncio [streams](https://docs.python.org/3/library/asyncio-stream.html) and [queues](https://docs.python.org/3/library/asyncio-queue.html). Asyncio tasks manage with [aionursery](https://pypi.org/project/aionursery/). User authorization by token, creating new account. The explored chat was created by [Devman team](https://dvmn.org/) especially for educational purposes.
+This is [Tkinter GUI](https://docs.python.org/3/library/tkinter.html) based program for chating uses asyncio [streams](https://docs.python.org/3/library/asyncio-stream.html) and [queues](https://docs.python.org/3/library/asyncio-queue.html). Asyncio tasks manage with [aionursery](https://pypi.org/project/aionursery/). User authorization by token and creating new account also available. The explored chat was created by [Devman team](https://dvmn.org/) especially for educational purposes.
 
 
 ## How to install
@@ -11,7 +11,7 @@ This is [Tkinter GUI](https://docs.python.org/3/library/tkinter.html) based prog
 pip install -r requirements.txt
 ```
 
-2. Put all necessary parameters to **.env** file. This is default parameters for utility and you can change them by CLI arguments.
+2. Put all necessary parameters to **.env** file. This is default parameters and you can change them by CLI arguments.
 
 ```
 HOST=host_to_connect
@@ -20,6 +20,7 @@ PORT_TO_WRITE=port_for_writing
 TOKEN=token
 FILEPATH=path_to_log_file
 ```
+
 
 ## Quickstart
 
