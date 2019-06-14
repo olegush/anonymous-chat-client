@@ -27,9 +27,11 @@ class InvalidToken(Exception):
     def __init__(self, message):
         self.message = message
 
+
 class ConnectionError(Exception):
     def __init__(self, message):
         self.message = message
+
 
 class UserInterrupt(Exception):
     def __init__(self, message):
@@ -118,7 +120,7 @@ async def watch_for_connection(queues):
             async with timeout(TIMEOUT_WATCH):
                 msg = await queues['watchdog'].get()
         except asyncio.TimeoutError:
-            watchdog_logger.info('%s sec timeout is elapsed' %TIMEOUT_WATCH)
+            watchdog_logger.info('%s sec timeout is elapsed' % TIMEOUT_WATCH)
             raise ConnectionError('ConnectionError')
 
 
@@ -145,7 +147,9 @@ async def handle_connection(host, port_to_read, port_to_write, token, filepath, 
     queues['statuses'].put_nowait(gui.NicknameReceived(nickname))
     queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
     queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
-    queues['messages'].put_nowait('WELCOME BACK {}!\nLoading chat history and connectiong to chat in {} seconds...\n'.format(nickname, DELAY_TO_LOAD_HISTORY))
+    queues['messages'].put_nowait(
+        'WELCOME BACK {}!\nLoading chat history and connectiong to chat '
+        'in {} seconds...\n'.format(nickname, DELAY_TO_LOAD_HISTORY))
     await asyncio.sleep(DELAY_TO_LOAD_HISTORY)
     async with AIOFile(filepath, 'a+') as afp:
         history = await afp.read()
@@ -179,8 +183,17 @@ async def main(host, port_to_read, port_to_write, token, filepath):
     }
     try:
         async with create_handy_nursery() as nursery:
-            nursery.start_soon(gui.draw(queues['messages'], queues['sending'], queues['statuses']))
-            nursery.start_soon(handle_connection(host, port_to_read, port_to_write, token, filepath, queues))
+            nursery.start_soon(gui.draw(
+                                    queues['messages'],
+                                    queues['sending'],
+                                    queues['statuses']))
+            nursery.start_soon(handle_connection(
+                                    host,
+                                    port_to_read,
+                                    port_to_write,
+                                    token,
+                                    filepath,
+                                    queues))
     except (KeyboardInterrupt, gui.TkAppClosed):
         watchdog_logger.info('KeyboardInterrupt or gui.TkAppClosed')
         raise UserInterrupt('UserInterrupt')
@@ -190,7 +203,12 @@ async def main(host, port_to_read, port_to_write, token, filepath):
 
 if __name__ == '__main__':
     load_dotenv()
-    args = get_args(os.getenv('HOST'), os.getenv('PORT_TO_READ'), os.getenv('PORT_TO_WRITE'), os.getenv('TOKEN'), os.getenv('FILEPATH'))
+    args = get_args(
+            os.getenv('HOST'),
+            os.getenv('PORT_TO_READ'),
+            os.getenv('PORT_TO_WRITE'),
+            os.getenv('TOKEN'),
+            os.getenv('FILEPATH'))
     watchdog_logger = create_logger()
     try:
         asyncio.run(main(**args))
