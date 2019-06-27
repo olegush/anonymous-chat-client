@@ -19,10 +19,13 @@ python3.7 -m pip install -r requirements.txt
 HOST=host_to_connect
 PORT_TO_READ=port_for_reading
 PORT_TO_WRITE=port_for_writing
-TOKEN=token
 FILEPATH=path_to_log_file
 ```
 
+if you're registered user, add your token to **.env** file:
+```
+TOKEN=token
+```
 
 ## Quickstart
 
@@ -32,6 +35,8 @@ Run **server.py** with arguments. Also you can use environment variables as para
 python3.7 main.py [--host] [--port_to_read] [--port_to_write] [--token] [--filepath]
 ```
 
+![registration screenshot](screenshots/reg.png)
+![chat screenshot](screenshots/chat.png)
 
 ## Project Goals
 

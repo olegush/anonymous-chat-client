@@ -15,7 +15,7 @@ from async_timeout import timeout
 import gui
 from handy_nursery import create_handy_nursery
 
-DELAY_TO_LOAD_HISTORY = 1
+DELAY_TO_LOAD_HISTORY = 3
 DELAY_TO_RECONNECT = 1
 TIMEOUT_WATCH = 30
 TIMEOUT_PING_PONG = 30
@@ -26,14 +26,21 @@ class InvalidToken(Exception):
     def __init__(self, message):
         self.message = message
 
+
 class ConnectionError(Exception):
     def __init__(self, message):
         self.message = message
+
 
 class ChatLogger(logging.Handler):
     def emit(self, record):
         log_entry = self.format(record)
         print(log_entry)
+
+
+class UserInterrupt(Exception):
+    def __init__(self, message):
+        self.message = message
 
 
 dictLogConfig = {
@@ -88,6 +95,19 @@ async def get_stream(host, port):
         writer.close()
 
 
+async def register(reader, writer, username):
+    # Registration and writing token to .env file.
+    data = await reader.readline()
+    username = sanitize(username)
+    writer.write('{}\n'.format(username).encode())
+    data = await reader.readline()
+    token = json.loads(data.decode())['account_hash']
+    username = json.loads(data.decode())['nickname']
+    async with AIOFile('.env', 'a+') as afp:
+        await afp.write('TOKEN={}'.format(token))
+    return username
+
+
 async def auth(reader, writer, token, queues):
     # Authorization with token.
     data = await reader.readline()
@@ -95,7 +115,14 @@ async def auth(reader, writer, token, queues):
     data = await reader.readline()
     data_json = json.loads(data.decode())
     if not data_json:
-        raise InvalidToken('Invalid token.Please check your .env file')
+        username = gui.msg_box(
+                        'Invalid token', 'If you\'re registered user, please'
+                        ' click "Cancel" and check your .env file.\n If you\'re'
+                        ' the new one, enter yor name below and click "OK"')
+        if username is None:
+            raise UserInterrupt('User Interrupt')
+        username = await register(reader, writer, username)
+        return username
     return data_json['nickname']
 
 
@@ -110,11 +137,13 @@ async def log_msgs(filepath, queues):
 
 
 async def watch_for_connection(queues):
-    # Conection watchdog.
+    # Connection's watchdog.
     while True:
         try:
             async with timeout(TIMEOUT_WATCH):
                 msg = await queues['watchdog'].get()
+        except (KeyboardInterrupt, gui.TkAppClosed, asyncio.CancelledError):
+            raise UserInterrupt('UserInterrupt')
         except asyncio.TimeoutError:
             watchdog_logger.info('%s sec timeout is elapsed' % TIMEOUT_WATCH)
             raise ConnectionError('ConnectionError')
@@ -143,7 +172,7 @@ async def read_msgs(host, port, queues):
             data = await reader.readline()
             queues['messages'].put_nowait(data.decode())
             queues['logs'].put_nowait(data.decode())
-            queues['watchdog'].put_nowait('Connection is alive. New message in chat')
+            queues['watchdog'].put_nowait('Connection is alive. New message')
 
 
 async def send_msgs(writer, queues):
@@ -151,7 +180,7 @@ async def send_msgs(writer, queues):
     queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
     while True:
         msg = await queues['sending'].get()
-        writer.write(msg.encode())
+        writer.write('{}\n'.format(msg).encode())
         queues['watchdog'].put_nowait('Connection is alive. Message sent')
 
 
@@ -172,7 +201,8 @@ async def handle_connection(host, port_to_read, port_to_write, token, filepath, 
         async with AIOFile(filepath, 'a+') as afp:
             history = await afp.read()
             if history:
-                queues['messages'].put_nowait('*** CHAT HISTORY\n{}***\n'.format(history))
+                queues['messages'].put_nowait(
+                                    '*** CHAT HISTORY\n{}***\n'.format(history))
         while True:
             # Run grandchildren tasks.
             async with create_handy_nursery() as nursery:
@@ -205,16 +235,13 @@ async def main(host, port_to_read, port_to_write, token, filepath):
                                     token,
                                     filepath,
                                     queues))
+    except UserInterrupt as e:
+        print(e)
     except ConnectionError as e:
         queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.CLOSED)
         queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.CLOSED)
         await asyncio.sleep(DELAY_TO_RECONNECT)
-    except (KeyboardInterrupt, gui.TkAppClosed) as err:
-        watchdog_logger.info('KeyboardInterrupt or gui.TkAppClosed')
-        print('UserInterrupt')
-    except InvalidToken as err:
-        gui.msg_box('Error', err)
-    except (ConnectionError, socket.gaierror) as err:
+    except (ConnectionError, socket.gaierror) as e:
         print('socket.gaierror (no internet connection)')
 
 
