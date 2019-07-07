@@ -38,11 +38,6 @@ class ChatLogger(logging.Handler):
         print(log_entry)
 
 
-class UserInterrupt(Exception):
-    def __init__(self, message):
-        self.message = message
-
-
 dictLogConfig = {
     'version': 1,
     'handlers': {
@@ -142,8 +137,6 @@ async def watch_for_connection(queues):
         try:
             async with timeout(TIMEOUT_WATCH):
                 msg = await queues['watchdog'].get()
-        except (KeyboardInterrupt, gui.TkAppClosed, asyncio.CancelledError):
-            raise UserInterrupt('UserInterrupt')
         except asyncio.TimeoutError:
             watchdog_logger.info('%s sec timeout is elapsed' % TIMEOUT_WATCH)
             raise ConnectionError('ConnectionError')
@@ -159,14 +152,11 @@ async def ping_pong(reader, writer):
             await asyncio.sleep(DELAY_TO_PING_PONG)
         except socket.gaierror:
             watchdog_logger.info('socket.gaierror')
-            queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.CLOSED)
-            queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.CLOSED)
             raise ConnectionError('socket.gaierror (no internet connection)')
 
 
 async def read_msgs(host, port, queues):
     # Read messages from opened stream and update "messages" queue.
-    queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
     async with get_stream(host, port) as (reader, writer):
         while True:
             data = await reader.readline()
@@ -177,7 +167,6 @@ async def read_msgs(host, port, queues):
 
 async def send_msgs(writer, queues):
     # Listen "sending" queue and sends messages.
-    queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
     while True:
         msg = await queues['sending'].get()
         writer.write('{}\n'.format(msg).encode())
@@ -189,6 +178,8 @@ async def handle_connection(host, port_to_read, port_to_write, token, filepath, 
     queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.INITIATED)
     # Open new stream.
     async with get_stream(host, port_to_write) as (reader, writer):
+        queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
+        queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
         queues['watchdog'].put_nowait('Connection is alive. Prompt before auth')
         # Authorization.
         nickname = await auth(reader, writer, token, queues)
@@ -211,6 +202,8 @@ async def handle_connection(host, port_to_read, port_to_write, token, filepath, 
                 nursery.start_soon(send_msgs(writer, queues))
                 nursery.start_soon(watch_for_connection(queues))
                 nursery.start_soon(ping_pong(reader, writer))
+    queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.CLOSED)
+    queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.CLOSED)
 
 
 async def main(host, port_to_read, port_to_write, token, filepath):
@@ -235,7 +228,7 @@ async def main(host, port_to_read, port_to_write, token, filepath):
                                     token,
                                     filepath,
                                     queues))
-    except UserInterrupt as e:
+    except (KeyboardInterrupt, gui.TkAppClosed, asyncio.CancelledError) as e:
         print(e)
     except ConnectionError as e:
         queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.CLOSED)
