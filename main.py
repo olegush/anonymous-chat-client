@@ -82,12 +82,13 @@ def get_args(host, port_to_read, port_to_write, token, filepath):
 
 
 @asynccontextmanager
-async def get_stream(host, port):
+async def get_stream(host, port, queues, status_closed):
     reader, writer = await asyncio.open_connection(host, port)
     try:
         yield (reader, writer)
     finally:
         writer.close()
+        queues['statuses'].put_nowait(status_closed)
 
 
 async def register(reader, writer, username):
@@ -156,9 +157,11 @@ async def ping_pong(reader, writer):
 
 
 async def read_msgs(host, port, queues):
-    # Read messages from opened stream and update "messages" queue.
-    async with get_stream(host, port) as (reader, writer):
+    # Read messages from opened stream, update "messages" queue and update statuses.
+    async with get_stream(host, port, queues, gui.ReadConnectionStateChanged.CLOSED) as (reader, writer):
+        queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.INITIATED)
         while True:
+            queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
             data = await reader.readline()
             queues['messages'].put_nowait(data.decode())
             queues['logs'].put_nowait(data.decode())
@@ -166,20 +169,18 @@ async def read_msgs(host, port, queues):
 
 
 async def send_msgs(writer, queues):
-    # Listen "sending" queue and sends messages.
+    # Listen "sending" queue, sends messages and update statuses.
+    queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.INITIATED)
     while True:
+        queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
         msg = await queues['sending'].get()
         writer.write('{}\n'.format(msg).encode())
         queues['watchdog'].put_nowait('Connection is alive. Message sent')
 
 
 async def handle_connection(host, port_to_read, port_to_write, token, filepath, queues):
-    queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.INITIATED)
-    queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.INITIATED)
     # Open new stream.
-    async with get_stream(host, port_to_write) as (reader, writer):
-        queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
-        queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
+    async with get_stream(host, port_to_write, queues, gui.SendingConnectionStateChanged.CLOSED) as (reader, writer):
         queues['watchdog'].put_nowait('Connection is alive. Prompt before auth')
         # Authorization.
         nickname = await auth(reader, writer, token, queues)
@@ -192,18 +193,14 @@ async def handle_connection(host, port_to_read, port_to_write, token, filepath, 
         async with AIOFile(filepath, 'a+') as afp:
             history = await afp.read()
             if history:
-                queues['messages'].put_nowait(
-                                    '*** CHAT HISTORY\n{}***\n'.format(history))
-        while True:
-            # Run grandchildren tasks.
-            async with create_handy_nursery() as nursery:
-                nursery.start_soon(log_msgs(filepath, queues))
-                nursery.start_soon(read_msgs(host, port_to_read, queues))
-                nursery.start_soon(send_msgs(writer, queues))
-                nursery.start_soon(watch_for_connection(queues))
-                nursery.start_soon(ping_pong(reader, writer))
-    queues['statuses'].put_nowait(gui.ReadConnectionStateChanged.CLOSED)
-    queues['statuses'].put_nowait(gui.SendingConnectionStateChanged.CLOSED)
+                queues['messages'].put_nowait('*** CHAT HISTORY\n{}***\n'.format(history))
+        # Run grandchildren tasks.
+        async with create_handy_nursery() as nursery:
+            nursery.start_soon(log_msgs(filepath, queues))
+            nursery.start_soon(read_msgs(host, port_to_read, queues))
+            nursery.start_soon(send_msgs(writer, queues))
+            nursery.start_soon(watch_for_connection(queues))
+            nursery.start_soon(ping_pong(reader, writer))
 
 
 async def main(host, port_to_read, port_to_write, token, filepath):
