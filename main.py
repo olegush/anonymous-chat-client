@@ -179,28 +179,29 @@ async def send_msgs(writer, queues):
 
 
 async def handle_connection(host, port_to_read, port_to_write, token, filepath, queues):
-    # Open new stream.
-    async with get_stream(host, port_to_write, queues, gui.SendingConnectionStateChanged.CLOSED) as (reader, writer):
-        queues['watchdog'].put_nowait('Connection is alive. Prompt before auth')
-        # Authorization.
-        nickname = await auth(reader, writer, token, queues)
-        queues['statuses'].put_nowait(gui.NicknameReceived(nickname))
-        queues['messages'].put_nowait(
-            'WELCOME BACK {}!\nLoading chat history and connectiong to chat '
-            'in {} seconds...\n'.format(nickname, DELAY_TO_LOAD_HISTORY))
-        await asyncio.sleep(DELAY_TO_LOAD_HISTORY)
-        # Read chat history.
-        async with AIOFile(filepath, 'a+') as afp:
-            history = await afp.read()
-            if history:
-                queues['messages'].put_nowait('*** CHAT HISTORY\n{}***\n'.format(history))
-        # Run grandchildren tasks.
-        async with create_handy_nursery() as nursery:
-            nursery.start_soon(log_msgs(filepath, queues))
-            nursery.start_soon(read_msgs(host, port_to_read, queues))
-            nursery.start_soon(send_msgs(writer, queues))
-            nursery.start_soon(watch_for_connection(queues))
-            nursery.start_soon(ping_pong(reader, writer))
+    while True:
+        # Open new stream.
+        async with get_stream(host, port_to_write, queues, gui.SendingConnectionStateChanged.CLOSED) as (reader, writer):
+            queues['watchdog'].put_nowait('Connection is alive. Prompt before auth')
+            # Authorization.
+            nickname = await auth(reader, writer, token, queues)
+            queues['statuses'].put_nowait(gui.NicknameReceived(nickname))
+            queues['messages'].put_nowait(
+                'WELCOME BACK {}!\nLoading chat history and connectiong to chat '
+                'in {} seconds...\n'.format(nickname, DELAY_TO_LOAD_HISTORY))
+            await asyncio.sleep(DELAY_TO_LOAD_HISTORY)
+            # Read chat history.
+            async with AIOFile(filepath, 'a+') as afp:
+                history = await afp.read()
+                if history:
+                    queues['messages'].put_nowait('*** CHAT HISTORY\n{}***\n'.format(history))
+            # Run grandchildren tasks.
+            async with create_handy_nursery() as nursery:
+                nursery.start_soon(log_msgs(filepath, queues))
+                nursery.start_soon(read_msgs(host, port_to_read, queues))
+                nursery.start_soon(send_msgs(writer, queues))
+                nursery.start_soon(watch_for_connection(queues))
+                nursery.start_soon(ping_pong(reader, writer))
 
 
 async def main(host, port_to_read, port_to_write, token, filepath):
